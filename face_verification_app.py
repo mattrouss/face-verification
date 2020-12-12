@@ -52,6 +52,8 @@ class LiveCamera(Image):
         self.capture = capture
         Clock.schedule_interval(self.update, 1.0 / 30)
 
+        self.bbox = None
+
     def update(self, dt):
         ret, frame = self.capture.read()
         if ret:
@@ -72,6 +74,10 @@ class LiveCamera(Image):
                 cv2.rectangle(frame, (startX, startY), (endX, endY),
                     (255, 0, 0), 2)
 
+                self.bbox = (startX, startY, endX, endY)
+            else:
+                self.bbox = None
+
             buf1 = cv2.flip(frame, 0)
             buf = buf1.tostring()
             image_texture = Texture.create(
@@ -86,7 +92,7 @@ class ImageLabel(BoxLayout):
         self.orientation = "vertical"
 
         if not image:
-            image = np.zeros((300, 300, 3), dtype=np.uint8)
+            image = np.zeros((500, 500, 3), dtype=np.uint8)
 
         self.image = Image()
         self.update_image(image)
@@ -155,12 +161,12 @@ class MyLayout(GridLayout):
         self.camera = LiveCamera(capture, fps=30)
         self.ref_panel = ReferencePanel()
 
-        button_color = (70 / 255, 127 / 255, 208 / 255, 1)
+        button_color = (.27, .49, .81, 1)
         screenshot_button = Button(text='Take a picture!',
                                    background_color=button_color,
                                    size_hint_y = None,
                                    height=100)
-        screenshot_button.bind(on_press= lambda a:print("picture taken"))
+        screenshot_button.bind(on_press= lambda a:self.snapshot())
 
         picture_select_button = Button(text='Choose a picture!',
                                        background_color=button_color,
@@ -189,8 +195,16 @@ class MyLayout(GridLayout):
         if self.file_path:
             img = cv2.imread(self.file_path)
             img = cv2.flip(img, 0)
-            self.ref_panel.update_ref(cv2.resize(img, (300, 300)))
-            
+            self.ref_panel.update_ref(cv2.resize(img, (500, 500)))
+
+    def snapshot(self):
+        if self.camera.bbox is not None:
+            startX, startY, endX, endY = self.camera.bbox
+            ret, frame = self.camera.capture.read()
+            if ret:
+                face = frame[startY:endY, startX:endX]
+                face = cv2.flip(face, 0)
+                self.ref_panel.update_ref(cv2.resize(face, (500, 500)))
 
 
 
