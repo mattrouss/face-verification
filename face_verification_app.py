@@ -11,6 +11,8 @@ from kivy.graphics.texture import Texture
 from kivy.uix.popup import Popup
 from kivy.properties import ObjectProperty, StringProperty
 
+import time
+
 import cv2
 import numpy as np
 
@@ -53,18 +55,24 @@ class LiveCamera(Image):
         Clock.schedule_interval(self.update, 1.0 / fps)
 
         self.bbox = None
+        self.detection_inference_time = None
+        self.net = cv2.dnn.readNetFromCaffe(PROTOTXT_PATH, RESNET_MODEL_PATH)
 
     def update(self, dt):
         ret, frame = self.capture.read()
         if ret:
-            net = cv2.dnn.readNetFromCaffe(PROTOTXT_PATH, RESNET_MODEL_PATH)
 
             (h, w) = frame.shape[:2]
             # Resize and normalize image to feed to resnet
             blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0,
                 (300, 300), (104.0, 177.0, 123.0))
-            net.setInput(blob)
-            detections = net.forward()
+
+            self.net.setInput(blob)
+            t0 = time.time()
+            detections = self.net.forward()
+            t1 = time.time()
+
+            self.detection_inference_time = t1 - t0
 
             # Use only first detection
             confidence = detections[0, 0, 0, 2]
@@ -91,6 +99,8 @@ class ImageLabel(BoxLayout):
         super(ImageLabel, self).__init__(**kwargs)
         self.orientation = "vertical"
 
+        self.face = None
+
         if not image:
             image = np.zeros((500, 500, 3), dtype=np.uint8)
 
@@ -109,6 +119,7 @@ class ImageLabel(BoxLayout):
         image_texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
 
         self.image.texture = image_texture
+        self.face = image
 
 
 class ReferencePanel(GridLayout):
@@ -129,7 +140,11 @@ class ReferencePanel(GridLayout):
         box.add_widget(self.ref_face)
 
         self.add_widget(box)
-        self.add_widget(Button(text='Hello'))
+
+        self.comp_text = 'Two faces are required to compare'
+        self.comp_label = Label(text=self.comp_text, halign='center',
+                markup=True)
+        self.add_widget(self.comp_label)
 
     def update(self, dt):
         if self.camera.bbox is not None:
@@ -139,6 +154,15 @@ class ReferencePanel(GridLayout):
                 face = frame[startY:endY, startX:endX]
                 face = cv2.flip(face, 0)
                 self.update_current(cv2.resize(face, (500, 500)))
+
+        comp_text = 'Face Verification: '
+        if self.cur_face.face is not None and self.ref_face.face is not None:
+            comp_text += '[color=ff3333]KO[/color]\n'
+
+        if self.camera.detection_inference_time is not None:
+            comp_text += f'Detection inference time: {self.camera.detection_inference_time:.3f}s\n'
+
+        self.comp_label.text = comp_text
 
 
     def update_current(self, image):
