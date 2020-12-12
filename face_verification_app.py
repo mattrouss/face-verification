@@ -50,7 +50,7 @@ class LiveCamera(Image):
     def __init__(self, capture, fps, **kwargs):
         super(LiveCamera, self).__init__(**kwargs)
         self.capture = capture
-        Clock.schedule_interval(self.update, 1.0 / 30)
+        Clock.schedule_interval(self.update, 1.0 / fps)
 
         self.bbox = None
 
@@ -112,9 +112,11 @@ class ImageLabel(BoxLayout):
 
 
 class ReferencePanel(GridLayout):
-    def __init__(self, **kwargs):
+    def __init__(self, camera, fps, **kwargs):
         super(ReferencePanel, self).__init__(**kwargs)
         self.cols = 1
+        self.camera = camera
+        Clock.schedule_interval(self.update, 1.0 / fps)
 
         title = Label(text='Face Verification\nApp', font_size="30sp", halign='center')
         self.add_widget(title)
@@ -129,23 +131,21 @@ class ReferencePanel(GridLayout):
         self.add_widget(box)
         self.add_widget(Button(text='Hello'))
 
+    def update(self, dt):
+        if self.camera.bbox is not None:
+            startX, startY, endX, endY = self.camera.bbox
+            ret, frame = self.camera.capture.read()
+            if ret:
+                face = frame[startY:endY, startX:endX]
+                face = cv2.flip(face, 0)
+                self.update_current(cv2.resize(face, (500, 500)))
+
+
     def update_current(self, image):
         self.cur_face.update_image(image)
 
     def update_ref(self, image):
         self.ref_face.update_image(image)
-
-
-class DisplayLayout(BoxLayout):
-    def __init__(self, capture, **kwargs):
-        super(DisplayLayout, self).__init__(**kwargs)
-        self.capture = capture
-        self.my_camera = LiveCamera(capture=capture, fps=30, size_hint=(1, 1))
-
-        side_panel = ReferencePanel()
-
-        self.add_widget(self.my_camera)
-        self.add_widget(side_panel)
 
 
 class FileChoosePopup(Popup):
@@ -159,7 +159,7 @@ class MyLayout(GridLayout):
         self.cols = 2
 
         self.camera = LiveCamera(capture, fps=30)
-        self.ref_panel = ReferencePanel()
+        self.ref_panel = ReferencePanel(self.camera, fps=30)
 
         button_color = (.27, .49, .81, 1)
         screenshot_button = Button(text='Take a picture!',
