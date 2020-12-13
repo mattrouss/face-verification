@@ -86,7 +86,6 @@ class LiveCamera(Image):
     def update(self, dt):
         ret, frame = self.capture.read()
         if ret:
-
             (h, w) = frame.shape[:2]
             # Resize and normalize image to feed to resnet
             blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)), 1.0,
@@ -112,7 +111,7 @@ class LiveCamera(Image):
                 self.bbox = None
 
             buf1 = cv2.flip(frame, 0)
-            buf = buf1.tostring()
+            buf = buf1.tobytes()
             image_texture = Texture.create(
                 size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
             image_texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
@@ -141,8 +140,9 @@ class ImageLabel(BoxLayout):
         if image is None:
             image = np.zeros((224, 224, 3), dtype=np.uint8)
 
+        image = cv2.flip(image, 0)
         image_texture = Texture.create(size=(image.shape[1], image.shape[0]), colorfmt='bgr')
-        buf = image.tostring()
+        buf = image.tobytes()
         image_texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
 
         self.image.texture = image_texture
@@ -175,22 +175,18 @@ class ReferencePanel(GridLayout):
         self.comp_label = Label(halign='center', markup=True)
         self.add_widget(self.comp_label)
 
-        self.mean = 22.838848
-        self.std = 56.285164
-
     def update(self, dt):
         if self.camera.bbox is not None:
             startX, startY, endX, endY = self.camera.bbox
             ret, frame = self.camera.capture.read()
             if ret:
                 face = frame[startY:endY, startX:endX]
-                face = cv2.flip(face, 0)
                 self.update_current(cv2.resize(face, (224, 224)))
 
         comp_text = ''
         if self.cur_face.face is not None and self.ref_face.face is not None:
-            cur_face = (self.cur_face.face - self.mean) / self.std
-            ref_face = (self.ref_face.face - self.mean) / self.std
+            cur_face = (self.cur_face.face / 255.).astype(np.float32)
+            ref_face = (self.ref_face.face / 255.).astype(np.float32)
 
             inputs = [cur_face[np.newaxis, ...], ref_face[np.newaxis, ...]]
             t0 = time.time()
@@ -200,12 +196,10 @@ class ReferencePanel(GridLayout):
             self.siamese_verification_time = t1 - t0
 
             comp_text += 'Face Verification: '
-            if pred[0] > 0.5:
+            if pred[0] >= 0.5:
                 comp_text += '[color=33ff33]OK[/color]\n'
             else:
                 comp_text += '[color=ff3333]KO[/color]\n'
-
-            comp_text += f'{pred}\n'
         else:
             comp_text += 'Two faces are required to compare.\n'
 
@@ -215,9 +209,7 @@ class ReferencePanel(GridLayout):
         if self.siamese_verification_time is not None:
             comp_text += f'Verification inference time: {self.siamese_verification_time:.3f}s\n'
 
-
         self.comp_label.text = comp_text
-
 
     def update_current(self, image):
         self.cur_face.update_image(image)
@@ -272,8 +264,7 @@ class MyLayout(GridLayout):
         # check for non-empty list i.e. file selected
         if self.file_path:
             img = cv2.imread(self.file_path)
-            img = cv2.flip(img, 0)
-            self.ref_panel.update_ref(cv2.resize(img, (500, 500)))
+            self.ref_panel.update_ref(cv2.resize(img, (224, 224)))
 
     def snapshot(self):
         if self.camera.bbox is not None:
@@ -281,9 +272,7 @@ class MyLayout(GridLayout):
             ret, frame = self.camera.capture.read()
             if ret:
                 face = frame[startY:endY, startX:endX]
-                face = cv2.flip(face, 0)
-                self.ref_panel.update_ref(cv2.resize(face, (500, 500)))
-
+                self.ref_panel.update_ref(cv2.resize(face, (224, 224)))
 
 
 class FaceVerificationApp(App):
@@ -292,7 +281,7 @@ class FaceVerificationApp(App):
         return MyLayout(self.capture)
 
     def on_stop(self):
-        #without this, app will not exit even if the window is closed
+        # without this, app will not exit even if the window is closed
         self.capture.release()
         pass
 
