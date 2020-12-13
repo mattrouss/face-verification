@@ -256,13 +256,13 @@ class MyLayout(GridLayout):
         self.file_path = StringProperty("No file chosen")
 
     def open_popup(self):
+        self.ref_panel.update_ref(None)
         self.the_popup = FileChoosePopup(load=self.load)
         self.the_popup.open()
 
     def load(self, selection):
         self.file_path = str(selection[0])
         self.the_popup.dismiss()
-        print(self.file_path)
 
         # check for non-empty list i.e. file selected
         if self.file_path:
