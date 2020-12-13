@@ -1,3 +1,8 @@
+import os
+import argparse
+
+os.environ['KIVY_NO_ARGS'] = '1'
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
@@ -6,7 +11,6 @@ from kivy.uix.button import Button
 from kivy.uix.image import Image
 from kivy.lang import Builder
 from kivy.clock import Clock
-from kivy.core.window import Window
 from kivy.graphics.texture import Texture
 from kivy.uix.popup import Popup
 from kivy.properties import ObjectProperty, StringProperty
@@ -25,7 +29,6 @@ from keras_vggface.vggface import VGGFace
 
 PROTOTXT_PATH = 'data/deploy.prototxt'
 RESNET_MODEL_PATH = 'data/res10_300x300_ssd_iter_140000_fp16.caffemodel'
-SIAMESE_MODEL_PATH = 'data/siamese.h5'
 
 Builder.load_string('''
 <FileChoosePopup>
@@ -156,7 +159,7 @@ class ReferencePanel(GridLayout):
         self.siamese_verification_time = None
 
         self.siamese_net = siamese_model()
-        self.siamese_net.load_weights(SIAMESE_MODEL_PATH)
+        self.siamese_net.load_weights(args['siamese_model'])
 
         Clock.schedule_interval(self.update, 1.0 / fps)
 
@@ -287,4 +290,9 @@ class FaceVerificationApp(App):
 
 
 if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-m", "--siamese_model",
+                    default='data/siamese.h5',
+                    help="path to siamese .h5 model")
+    args = vars(ap.parse_args())
     FaceVerificationApp().run()
