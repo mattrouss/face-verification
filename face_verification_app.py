@@ -16,9 +16,16 @@ import time
 import cv2
 import numpy as np
 
+from keras import Sequential, Model
+from keras.layers import Conv2D, MaxPool2D, Dense, Input, Flatten, Lambda, merge
+import keras.backend as K
+
+from keras_vggface.vggface import VGGFace
+
 
 PROTOTXT_PATH = 'data/deploy.prototxt'
 RESNET_MODEL_PATH = 'data/res10_300x300_ssd_iter_140000_fp16.caffemodel'
+SIAMESE_MODEL_PATH = 'data/siamese.h5'
 
 Builder.load_string('''
 <FileChoosePopup>
@@ -46,6 +53,24 @@ Builder.load_string('''
     orientation: 'vertical'
     size_hint: 1, 1
 ''')
+
+def siamese_model(input_shape=(224, 224, 3)):
+  input_left = Input(input_shape)
+  input_right = Input(input_shape)
+
+  vggface = VGGFace(model='vgg16', include_top=False, input_shape=input_shape, pooling='avg')
+
+  model_1 = vggface(input_left, training=False)
+  model_2 = vggface(input_right, training=False)
+
+  L1_layer = Lambda(lambda models: K.abs(models[0] - models[1]))
+
+  # Add the distance function to the network
+  dist_layer = L1_layer([model_1, model_2])
+  out = Dense(128, activation='sigmoid')(dist_layer)
+  out = Dense(1, activation='sigmoid')(out)
+
+  return Model(inputs=[input_left, input_right], outputs=out)
 
 
 class LiveCamera(Image):
@@ -94,15 +119,13 @@ class LiveCamera(Image):
             # display image from the texture
             self.texture = image_texture
 
+
 class ImageLabel(BoxLayout):
     def __init__(self, image, label, **kwargs):
         super(ImageLabel, self).__init__(**kwargs)
         self.orientation = "vertical"
 
         self.face = None
-
-        if not image:
-            image = np.zeros((500, 500, 3), dtype=np.uint8)
 
         self.image = Image()
         self.update_image(image)
@@ -112,14 +135,17 @@ class ImageLabel(BoxLayout):
         self.add_widget(self.image)
         self.add_widget(self.label)
 
-       
     def update_image(self, image):
+        self.face = image
+
+        if image is None:
+            image = np.zeros((224, 224, 3), dtype=np.uint8)
+
         image_texture = Texture.create(size=(image.shape[1], image.shape[0]), colorfmt='bgr')
         buf = image.tostring()
         image_texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
 
         self.image.texture = image_texture
-        self.face = image
 
 
 class ReferencePanel(GridLayout):
@@ -127,6 +153,11 @@ class ReferencePanel(GridLayout):
         super(ReferencePanel, self).__init__(**kwargs)
         self.cols = 1
         self.camera = camera
+        self.siamese_verification_time = None
+
+        self.siamese_net = siamese_model()
+        self.siamese_net.load_weights(SIAMESE_MODEL_PATH)
+
         Clock.schedule_interval(self.update, 1.0 / fps)
 
         title = Label(text='Face Verification\nApp', font_size="30sp", halign='center')
@@ -141,10 +172,11 @@ class ReferencePanel(GridLayout):
 
         self.add_widget(box)
 
-        self.comp_text = 'Two faces are required to compare'
-        self.comp_label = Label(text=self.comp_text, halign='center',
-                markup=True)
+        self.comp_label = Label(halign='center', markup=True)
         self.add_widget(self.comp_label)
+
+        self.mean = 22.838848
+        self.std = 56.285164
 
     def update(self, dt):
         if self.camera.bbox is not None:
@@ -153,14 +185,36 @@ class ReferencePanel(GridLayout):
             if ret:
                 face = frame[startY:endY, startX:endX]
                 face = cv2.flip(face, 0)
-                self.update_current(cv2.resize(face, (500, 500)))
+                self.update_current(cv2.resize(face, (224, 224)))
 
-        comp_text = 'Face Verification: '
+        comp_text = ''
         if self.cur_face.face is not None and self.ref_face.face is not None:
-            comp_text += '[color=ff3333]KO[/color]\n'
+            cur_face = (self.cur_face.face - self.mean) / self.std
+            ref_face = (self.ref_face.face - self.mean) / self.std
+
+            inputs = [cur_face[np.newaxis, ...], ref_face[np.newaxis, ...]]
+            t0 = time.time()
+            pred = self.siamese_net(inputs)
+            print(pred)
+            t1 = time.time()
+            self.siamese_verification_time = t1 - t0
+
+            comp_text += 'Face Verification: '
+            if pred[0] > 0.5:
+                comp_text += '[color=33ff33]OK[/color]\n'
+            else:
+                comp_text += '[color=ff3333]KO[/color]\n'
+
+            comp_text += f'{pred}\n'
+        else:
+            comp_text += 'Two faces are required to compare.\n'
 
         if self.camera.detection_inference_time is not None:
             comp_text += f'Detection inference time: {self.camera.detection_inference_time:.3f}s\n'
+
+        if self.siamese_verification_time is not None:
+            comp_text += f'Verification inference time: {self.siamese_verification_time:.3f}s\n'
+
 
         self.comp_label.text = comp_text
 

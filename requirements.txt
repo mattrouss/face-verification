@@ -2,6 +2,8 @@ numpy==1.19.4
 opencv-python==4.4.0.46
 dlib==19.21.1
 jupyter==1.0.0
+tensorflow
 keras==2.4.3
 keras_vggface==0.6
+keras_applications
 kivy==2.0.0
