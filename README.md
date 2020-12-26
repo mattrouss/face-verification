@@ -15,4 +15,5 @@ python3 face_verification_app.py
 
 <img src="data/examples/example1.png" width="400">
 <img src="data/examples/example2.png" width="400">
+<img src="data/examples/example3.png" width="400">
 
